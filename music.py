@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+import re
+from urllib.parse import urlparse, parse_qs
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.service import Service as EdgeService
@@ -62,6 +64,15 @@ if not browser_choice:
             print("Invalid input. Please enter 1 for Chrome or 2 for Edge.")
             time.sleep(5)
             clear_screen()
+            
+def extract_youtube_id(url):
+    # YouTube URL에서 영상 ID를 추출하는 함수
+    parsed_url = urlparse(url)
+    if parsed_url.netloc in ["youtube.com", "www.youtube.com", "music.youtube.com", "www.youtube-nocookie.com", "youtube-nocookie.com"]:
+        return parse_qs(parsed_url.query).get("v", [None])[0]
+    elif parsed_url.netloc in ["youtu.be"]:
+        return parsed_url.path[1:]
+    return None
 
 driver = initialize_driver(browser_choice, chrome_driver, edge_driver)
 if driver is None:
@@ -76,11 +87,17 @@ while True:
         break
 
     url = urls[0]
+    video_id = extract_youtube_id(url)
+    if video_id is None:
+        print("Invalid YouTube URL.")
+        break
+
     driver.get(url)  # Play the music
 
     while True:
         time.sleep(0.001)  # Wait for 0.001 seconds
-        if driver.current_url != url:  # Check if the current URL has changed
+        current_video_id = extract_youtube_id(driver.current_url)
+        if current_video_id != video_id:  # Check if the video ID has changed
             break
 
     # Remove the played music from the file by re-reading and writing everything except first line
