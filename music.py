@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-import re
+import pandas as pd
 from urllib.parse import urlparse, parse_qs
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -42,6 +42,48 @@ def initialize_driver(browser_choice, chrome_driver, edge_driver):
         print(f"현재 설치되어 있는 {browser_choice.title()}의 버전에 맞는 {browser_choice.title()} 드라이버를 사용해 주세요!")
         return None
 
+def extract_youtube_id(url):
+    # YouTube URL에서 영상 ID를 추출하는 함수
+    parsed_url = urlparse(url)
+    if parsed_url.netloc in ["youtube.com", "www.youtube.com", "music.youtube.com", "www.youtube-nocookie.com", "youtube-nocookie.com"]:
+        video_id = parse_qs(parsed_url.query).get("v", [None])[0]
+    elif parsed_url.netloc in ["youtu.be"]:
+        video_id = parsed_url.path[1:]
+    else:
+        return None
+
+    # 기본 YouTube URL 형식으로 반환
+    if video_id:
+        return f"https://www.youtube.com/watch?v={video_id}"
+    else:
+        return None
+
+def read_playlist(file_path):
+    # 플레이리스트 파일 읽기 (TSV 또는 XLSX)
+    if file_path.endswith('.tsv'):
+        return pd.read_csv(file_path, sep='\t')
+    elif file_path.endswith('.xlsx'):
+        return pd.read_excel(file_path)
+    else:
+        raise ValueError("지원되지 않는 파일 형식입니다.")
+
+def update_playlist(file_path, playlist):
+    # 플레이리스트 파일 업데이트
+    if file_path.endswith('.tsv'):
+        playlist.to_csv(file_path, sep='\t', index=False)
+    elif file_path.endswith('.xlsx'):
+        playlist.to_excel(file_path, index=False)
+
+def find_playlist_file():
+    # 플레이리스트 파일 찾기
+    if os.path.exists('playlist.tsv'):
+        return 'playlist.tsv', None
+    elif os.path.exists('playlist.xlsx'):
+        return 'playlist.xlsx', None
+    elif os.path.exists('playlist.xls'):
+        return None, "The xls file is not supported. Please convert to xlsx or tsv."
+    return None, "playlist.tsv 또는 playlist.xlsx 파일을 찾을 수 없습니다."
+
 chrome_driver, edge_driver = get_driver_filenames()
 chrome_exists, edge_exists = check_driver_existence(chrome_driver, edge_driver)
 
@@ -64,42 +106,50 @@ if not browser_choice:
             print("Invalid input. Please enter 1 for Chrome or 2 for Edge.")
             time.sleep(5)
             clear_screen()
-            
-def extract_youtube_id(url):
-    # YouTube URL에서 영상 ID를 추출하는 함수
-    parsed_url = urlparse(url)
-    if parsed_url.netloc in ["youtube.com", "www.youtube.com", "music.youtube.com", "www.youtube-nocookie.com", "youtube-nocookie.com"]:
-        return parse_qs(parsed_url.query).get("v", [None])[0]
-    elif parsed_url.netloc in ["youtu.be"]:
-        return parsed_url.path[1:]
-    return None
 
 driver = initialize_driver(browser_choice, chrome_driver, edge_driver)
 if driver is None:
     sys.exit()
 
-while True:
-    with open('music.txt', 'r') as f:
-        urls = [url.strip() for url in f.readlines()]  # Read the URLs
+def initialize_playlist(file_path):
+    # 플레이리스트 초기화 (Times와 ListenNums 설정)
+    playlist = read_playlist(file_path)
+    playlist['Times'] = playlist['Times'].fillna(1).astype(int)
+    playlist['ListenNums'] = playlist['ListenNums'].fillna(0).astype(int)
+    update_playlist(file_path, playlist)
+    return playlist
 
-    if not urls:
-        print("No music to play. Exiting...")
-        break
+# 플레이리스트 파일을 찾고 초기화합니다.
+playlist_file, error_message = find_playlist_file()
 
-    url = urls[0]
-    video_id = extract_youtube_id(url)
-    if video_id is None:
-        print("Invalid YouTube URL.")
-        break
+if playlist_file is None:
+    print(error_message)
+    sys.exit()
 
-    driver.get(url)  # Play the music
+playlist = initialize_playlist(playlist_file)
 
-    while True:
-        time.sleep(0.001)  # Wait for 0.001 seconds
-        current_video_id = extract_youtube_id(driver.current_url)
-        if current_video_id != video_id:  # Check if the video ID has changed
-            break
+# 각 행에 대해 처리를 진행합니다.
+for index, row in playlist.iterrows():
+    if pd.isna(row['URL']):
+        continue
 
-    # Remove the played music from the file by re-reading and writing everything except first line
-    lines = open('music.txt', 'r').readlines()
-    open('music.txt', 'w').writelines(lines[1:])
+    standard_url = extract_youtube_id(row['URL'])
+    if standard_url is None:
+        print("유효하지 않은 YouTube URL입니다.")
+        continue
+
+    times_to_play = row['Times']
+    listen_nums = row['ListenNums']
+
+    if listen_nums >= times_to_play:
+        continue
+
+    driver.get(standard_url)
+    for _ in range(times_to_play - listen_nums):
+        while True:
+            time.sleep(0.001)
+            current_video_id = extract_youtube_id(driver.current_url)
+            if current_video_id != extract_youtube_id(standard_url):
+                break
+        playlist.at[index, 'ListenNums'] += 1
+        update_playlist(playlist_file, playlist)  # 영상 재생 후 ListenNums 업데이트
