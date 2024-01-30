@@ -55,5 +55,8 @@ node music.js
 |유튜브 URL을 입력합니다.|몇번 재생할 지 숫자로만 입력합니다.|몇번 재생했는지 숫자로만 입력합니다.|
 |https://www.youtube.com/watch?v=sLr2rDnbN2o|2|1|
 
+# 주의사항
+브라우저 및 유튜브 정책으로 인해 사용자의 행동(클릭 등)이 있지 않으면 자동재생 되지 않습니다. 즉, 첫번째 영상에 한해서 수동으로 재생 버튼을 눌러줘야 합니다.
+
 # 라이선스
 본 프로젝트는 [MIT 라이선스](https://github.com/gaon12/MusicQueue/blob/main/LICENSE)로 배포 됩니다!
